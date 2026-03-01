@@ -691,6 +691,64 @@ kbd {
   font-family: Arial, monospace;
 }
 
+/* ---- Microphone section ---- */
+.mic-section {
+  padding: 10px 12px;
+}
+
+.mic-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.mic-btn {
+  background: #1e1810;
+  border: 1px solid var(--gold-dim);
+  color: var(--text-muted);
+  padding: 5px 10px;
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.mic-btn:hover          { border-color: var(--gold); color: var(--gold); }
+.mic-btn.active         { background: rgba(46,204,113,0.15); border-color: #2ecc71; color: #2ecc71; }
+.mic-btn[data-status="calibrating"] { border-color: #f39c12; color: #f39c12; }
+
+.mic-status-text {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.mic-level-track {
+  height: 5px;
+  background: #1e1810;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.mic-level-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #2ecc71, #f5c842);
+  border-radius: 3px;
+  transition: width 0.05s linear;
+}
+
+.mic-chord-feedback {
+  font-size: 0.72rem;
+  min-height: 1.2em;
+  line-height: 1.4;
+  transition: color 0.2s;
+  color: var(--text-dim);
+}
+.mic-chord-feedback.match    { color: #2ecc71; }
+.mic-chord-feedback.mismatch { color: #e67e22; }
+
 /* ============================================================
    RESULTS SCREEN
    ============================================================ */

@@ -165,6 +165,174 @@ class ScoreManager {
   }
 }
 
+// ---------- Chord Chromagram Templates ----------
+// 12 pitch classes: C C# D D# E F F# G G# A A# B  (indices 0–11)
+const CHORD_CHROMA = {
+  'G':  [0,0,1,0,0,0,0,1,0,0,0,1],  // G(7) B(11) D(2)
+  'C':  [1,0,0,0,1,0,0,1,0,0,0,0],  // C(0) E(4)  G(7)
+  'D':  [0,0,1,0,0,0,1,0,0,1,0,0],  // D(2) F#(6) A(9)
+  'Em': [0,0,0,0,1,0,0,1,0,0,0,1],  // E(4) G(7)  B(11)
+  'Am': [1,0,0,0,1,0,0,0,0,1,0,0],  // C(0) E(4)  A(9)
+  'A':  [0,1,0,0,1,0,0,0,0,1,0,0],  // A(9) C#(1) E(4)
+  'E':  [0,0,0,0,1,0,0,0,1,0,0,1],  // E(4) G#(8) B(11)
+  'A7': [0,1,0,0,1,0,0,1,0,1,0,0],  // A(9) C#(1) E(4) G(7)
+  'D7': [1,0,1,0,0,0,1,0,0,1,0,0],  // D(2) F#(6) A(9) C(0)
+  'B7': [0,0,0,1,0,0,1,0,0,1,0,1],  // B(11) D#(3) F#(6) A(9)
+  'G7': [0,0,1,0,0,1,0,1,0,0,0,1],  // G(7) B(11) D(2) F(5)
+};
+
+// ---------- Microphone Input & Chord Detector ----------
+
+class MicInput {
+  constructor() {
+    this.enabled     = false;
+    this.ready       = false;
+    this.calibrating = false;
+    this.stream      = null;
+    this.analyser    = null;
+    this.timeData    = null;
+    this.freqData    = null;
+    this.sampleRate  = 44100;
+
+    this._noiseFloor   = 0.01;
+    this._calibSamples = [];
+    this._calibStart   = 0;
+    this._CALIB_MS     = 2000;
+    this._lastStrumMs  = -Infinity;
+    this._MIN_STRUM_GAP = 180;
+    this._strumActive  = false;
+    this._rmsHistory   = [];
+  }
+
+  async start(audioCtx) {
+    if (this.enabled) return { ok: true };
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false }
+      });
+      const source  = audioCtx.createMediaStreamSource(this.stream);
+      this.analyser = audioCtx.createAnalyser();
+      this.analyser.fftSize               = 4096;
+      this.analyser.smoothingTimeConstant = 0.3;
+      source.connect(this.analyser);
+      this.timeData  = new Float32Array(this.analyser.fftSize);
+      this.freqData  = new Float32Array(this.analyser.frequencyBinCount);
+      this.sampleRate = audioCtx.sampleRate;
+      this.enabled    = true;
+      this.calibrating = true;
+      this._calibStart  = performance.now();
+      this._calibSamples = [];
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  stop() {
+    if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    this.enabled = false;
+    this.ready   = false;
+    this.calibrating = false;
+  }
+
+  // Call every animation frame. Returns { strum, chord, confidence, level, calibrating, calibProgress }
+  poll(nowMs) {
+    if (!this.enabled || !this.analyser) return { strum: false, level: 0 };
+
+    const rms   = this._getRMS();
+    const level = Math.min(1, rms / 0.15);
+
+    // Calibration phase — measure background noise for 2 s
+    if (this.calibrating) {
+      this._calibSamples.push(rms);
+      const progress = (nowMs - this._calibStart) / this._CALIB_MS;
+      if (progress >= 1) {
+        const avg = this._calibSamples.reduce((a, b) => a + b, 0) / this._calibSamples.length;
+        this._noiseFloor = Math.max(0.004, avg * 2);
+        this.calibrating = false;
+        this.ready = true;
+      }
+      return { strum: false, level, calibrating: true, calibProgress: Math.min(1, progress) };
+    }
+
+    const strum = this._detectStrum(rms, nowMs);
+
+    // Chord detection for ~800 ms after a strum
+    let chord = null, confidence = 0;
+    if (strum || nowMs - this._lastStrumMs < 800) {
+      const res = this._detectChord();
+      chord      = res.chord;
+      confidence = res.confidence;
+    }
+
+    return { strum, chord, confidence, level, calibrating: false };
+  }
+
+  get calibProgress() {
+    if (!this.calibrating) return 1;
+    return Math.min(1, (performance.now() - this._calibStart) / this._CALIB_MS);
+  }
+
+  _getRMS() {
+    this.analyser.getFloatTimeDomainData(this.timeData);
+    let sum = 0;
+    for (let i = 0; i < this.timeData.length; i++) sum += this.timeData[i] ** 2;
+    return Math.sqrt(sum / this.timeData.length);
+  }
+
+  _detectStrum(rms, nowMs) {
+    this._rmsHistory.push(rms);
+    if (this._rmsHistory.length > 8) this._rmsHistory.shift();
+
+    const prev = this._rmsHistory.slice(0, -1);
+    const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : 0;
+    const threshold = Math.max(this._noiseFloor * 3, 0.015);
+    const isSpike   = rms > threshold && rms > prevAvg * 1.6;
+
+    if (isSpike && !this._strumActive && nowMs - this._lastStrumMs > this._MIN_STRUM_GAP) {
+      this._strumActive = true;
+      this._lastStrumMs = nowMs;
+      return true;
+    }
+    if (rms < threshold * 0.5) this._strumActive = false;
+    return false;
+  }
+
+  _detectChord() {
+    this.analyser.getFloatFrequencyData(this.freqData);
+    const chroma = new Float32Array(12).fill(0);
+    const C1 = 32.703;   // Hz — lowest C on standard guitar range
+
+    for (let bin = 2; bin < this.freqData.length; bin++) {
+      const freq = bin * this.sampleRate / this.analyser.fftSize;
+      if (freq < 60 || freq > 2600) continue;
+      const db = this.freqData[bin];
+      if (db < -80) continue;
+      const amp = Math.pow(10, db / 20);
+      const semitones = 12 * Math.log2(freq / C1);
+      const pc = ((Math.round(semitones) % 12) + 12) % 12;
+      chroma[pc] += amp;
+    }
+
+    const maxC = Math.max(...chroma);
+    if (maxC === 0) return { chord: null, confidence: 0 };
+    for (let i = 0; i < 12; i++) chroma[i] /= maxC;
+
+    let best = null, bestSim = 0;
+    for (const [name, tmpl] of Object.entries(CHORD_CHROMA)) {
+      const sim = this._cosineSim(chroma, tmpl);
+      if (sim > bestSim) { bestSim = sim; best = name; }
+    }
+    return { chord: best, confidence: bestSim };
+  }
+
+  _cosineSim(a, b) {
+    let dot = 0, mA = 0, mB = 0;
+    for (let i = 0; i < 12; i++) { dot += a[i]*b[i]; mA += a[i]**2; mB += b[i]**2; }
+    return (mA && mB) ? dot / Math.sqrt(mA * mB) : 0;
+  }
+}
+
 // ---------- Game State ----------
 
 const State = { MENU: 'menu', LEARN: 'learn', GAME: 'game', PLAYING: 'playing', PAUSED: 'paused', RESULTS: 'results' };
@@ -189,6 +357,9 @@ class Game {
 
     this.audio   = new AudioEngine();
     this.scorer  = new ScoreManager();
+    this.mic     = new MicInput();
+    this.micFeedback = null;  // { match, detected, expected, time }
+    this.micLevel    = 0;
 
     // Canvas
     this.canvas  = null;
@@ -219,7 +390,8 @@ class Game {
       'results-streak', 'results-grade', 'results-song-name',
       'btn-try-again', 'btn-back-songs', 'countdown-display',
       'section-label', 'diff-beginner', 'diff-intermediate', 'diff-expert',
-      'pause-overlay', 'btn-resume'
+      'pause-overlay', 'btn-resume',
+      'btn-mic', 'mic-status', 'mic-level-bar', 'mic-chord-feedback'
     ];
     ids.forEach(id => {
       const el = document.getElementById(id);
@@ -331,6 +503,7 @@ class Game {
         index:      idx,
         chord:      item.chord,
         section:    item.section,
+        lyric:      item.lyric || '',
         startMs:    t,
         durationMs: durationMs,
         endMs:      t + durationMs,
@@ -427,6 +600,32 @@ class Game {
         this.scorer.addMiss();
       }
     });
+
+    // Microphone polling — detect strums and chords from guitar audio
+    if (this.mic.enabled) {
+      const nowMs = performance.now();
+      const micResult = this.mic.poll(nowMs);
+      this.micLevel = micResult.level || 0;
+
+      if (micResult.strum) this._handleStrum();
+
+      if (micResult.chord && micResult.confidence > 0.55) {
+        let expectedChord = null;
+        for (const note of this.timeline) {
+          if (note.startMs <= this.elapsed && this.elapsed < note.endMs) {
+            expectedChord = note.chord; break;
+          }
+        }
+        this.micFeedback = {
+          match:      micResult.chord === expectedChord,
+          detected:   micResult.chord,
+          expected:   expectedChord,
+          confidence: micResult.confidence,
+          time:       nowMs,
+        };
+      }
+      this._updateMicUI();
+    }
 
     // Beat tick
     this._processBeat();
@@ -858,6 +1057,87 @@ class Game {
     }
   }
 
+  // ---- Microphone ----
+
+  async _toggleMic() {
+    if (!this.audio.ctx) {
+      alert('Audio not available in this browser.');
+      return;
+    }
+    this.audio.resume();
+
+    if (this.mic.enabled) {
+      this.mic.stop();
+      this.micFeedback = null;
+      this.micLevel    = 0;
+      this._updateMicUI();
+      return;
+    }
+
+    // Show "requesting" state immediately
+    this._updateMicUI('requesting');
+    const result = await this.mic.start(this.audio.ctx);
+    if (!result.ok) {
+      alert('Microphone access denied.\n\nTo use this feature, allow microphone access in your browser settings and try again.');
+    }
+    this._updateMicUI();
+  }
+
+  _updateMicUI(overrideStatus) {
+    const btn       = this.dom['btn-mic'];
+    const statusEl  = this.dom['mic-status'];
+    const levelBar  = this.dom['mic-level-bar'];
+    const feedbackEl= this.dom['mic-chord-feedback'];
+
+    // Determine display status
+    let status = overrideStatus;
+    if (!status) {
+      if (!this.mic.enabled)      status = 'off';
+      else if (this.mic.calibrating) status = 'calibrating';
+      else if (this.mic.ready)    status = 'ready';
+      else                        status = 'starting';
+    }
+
+    if (btn) {
+      btn.dataset.status = status;
+      btn.classList.toggle('active', status !== 'off');
+    }
+
+    if (statusEl) {
+      const labels = {
+        off:          'Off',
+        requesting:   'Requesting…',
+        starting:     'Starting…',
+        calibrating:  `Calibrating… ${Math.round(this.mic.calibProgress * 100)}%`,
+        ready:        'Listening',
+      };
+      statusEl.textContent = labels[status] || status;
+    }
+
+    if (levelBar) {
+      levelBar.style.width = (this.micLevel * 100).toFixed(1) + '%';
+    }
+
+    if (feedbackEl && this.micFeedback) {
+      const age = performance.now() - this.micFeedback.time;
+      if (age < 2500) {
+        const { match, detected, expected } = this.micFeedback;
+        if (match) {
+          feedbackEl.textContent  = `✓ Sounds like ${detected}!`;
+          feedbackEl.className    = 'mic-chord-feedback match';
+        } else {
+          feedbackEl.textContent  = expected
+            ? `Heard ${detected} — need ${expected}`
+            : `Heard: ${detected}`;
+          feedbackEl.className    = 'mic-chord-feedback mismatch';
+        }
+      } else {
+        feedbackEl.textContent = status === 'ready' ? 'Strum your guitar…' : '';
+        feedbackEl.className   = 'mic-chord-feedback';
+      }
+    }
+  }
+
   // ---- Event Binding ----
 
   _bindEvents() {
@@ -870,6 +1150,11 @@ class Game {
         btn.classList.add('active');
       });
     });
+
+    // Mic toggle
+    if (this.dom['btn-mic']) {
+      this.dom['btn-mic'].addEventListener('click', () => this._toggleMic());
+    }
 
     // Back to menu
     if (this.dom['btn-back-menu']) {
