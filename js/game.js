@@ -344,8 +344,8 @@ class Game {
     this.beatCount = 0;
     this.lastBeatTime = -Infinity;
 
+    this._showScreen(State.GAME);  // must be visible before canvas can measure dimensions
     this._setupCanvas();
-    this._showScreen(State.GAME);
     this._runCountdown();
   }
 
@@ -381,7 +381,7 @@ class Game {
       if (display) display.textContent = count;
       this.audio.playMetronome(true);
       count--;
-      if (count >= 0) {
+      if (count > 0) {
         setTimeout(tick, 1000);
       } else {
         if (display) display.textContent = 'GO!';
