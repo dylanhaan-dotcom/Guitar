@@ -215,7 +215,7 @@ class Game {
       'learn-tips', 'btn-start-game', 'btn-back-menu',
       'highway-canvas', 'hud-score', 'hud-streak', 'hud-multiplier',
       'hud-song-name', 'current-chord-name', 'current-chord-diagram',
-      'next-chord-name', 'beat-dots', 'results-score', 'results-accuracy',
+      'next-chord-name', 'hud-lyric', 'beat-dots', 'results-score', 'results-accuracy',
       'results-streak', 'results-grade', 'results-song-name',
       'btn-try-again', 'btn-back-songs', 'countdown-display',
       'section-label', 'diff-beginner', 'diff-intermediate', 'diff-expert',
@@ -296,6 +296,19 @@ class Game {
         `;
         chordGrid.appendChild(item);
       });
+    }
+
+    // Strum pattern on learn screen
+    const strumLabel = document.getElementById('learn-strum-label');
+    if (strumLabel) strumLabel.textContent = song.strumLabel || '';
+
+    const strumGrid = document.getElementById('learn-strum-grid');
+    if (strumGrid && song.strumPattern) {
+      strumGrid.innerHTML = song.strumPattern.map(sym => {
+        if (sym === 'D') return `<div class="strum-cell down">↓</div>`;
+        if (sym === 'U') return `<div class="strum-cell up">↑</div>`;
+        return `<div class="strum-cell rest">·</div>`;
+      }).join('');
     }
 
     // Tips
@@ -541,19 +554,43 @@ class Game {
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Chord name text (only if block is tall enough and visible)
+      // Chord name + lyric text inside block
       if (blockH > 20 && blockTopY < H - 5 && blockBotY > 5) {
-        const textY = Math.max(blockTopY + blockH / 2, blockTopY + 18);
-        const clampedTextY = Math.min(Math.max(textY, blockTopY + 18), Math.min(blockBotY - 6, H - 5));
-        ctx.fillStyle   = '#fff';
-        ctx.shadowColor = 'rgba(0,0,0,0.8)';
-        ctx.shadowBlur  = 4;
-        const fontSize = Math.min(26, Math.max(14, blockH * 0.4));
-        ctx.font        = `bold ${fontSize}px Arial, sans-serif`;
-        ctx.textAlign   = 'center';
+        const hasLyric = note.lyric && note.lyric.trim().length > 0;
+        const chordFontSize = Math.min(26, Math.max(14, blockH * 0.35));
+        const lyricFontSize = Math.min(13, Math.max(9, blockH * 0.14));
+
+        // Chord name — positioned in upper center of block
+        const chordY = hasLyric
+          ? Math.max(blockTopY + chordFontSize, blockTopY + blockH * 0.35)
+          : Math.max(blockTopY + blockH / 2, blockTopY + chordFontSize);
+        const clampedChordY = Math.min(chordY, Math.min(blockBotY - chordFontSize, H - 5));
+
+        ctx.fillStyle    = '#fff';
+        ctx.shadowColor  = 'rgba(0,0,0,0.8)';
+        ctx.shadowBlur   = 4;
+        ctx.font         = `bold ${chordFontSize}px Arial, sans-serif`;
+        ctx.textAlign    = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(note.chord, bx + bw / 2, clampedTextY);
-        ctx.shadowBlur  = 0;
+        ctx.fillText(note.chord, bx + bw / 2, clampedChordY);
+        ctx.shadowBlur   = 0;
+
+        // Lyric text — positioned below chord name
+        if (hasLyric && blockH > 44) {
+          const lyricY = clampedChordY + chordFontSize * 0.8;
+          const clampedLyricY = Math.min(lyricY, Math.min(blockBotY - 6, H - 5));
+          ctx.fillStyle    = 'rgba(255,255,255,0.75)';
+          ctx.font         = `italic ${lyricFontSize}px Arial, sans-serif`;
+          ctx.textAlign    = 'center';
+          ctx.textBaseline = 'middle';
+          // Truncate lyric if too wide for block
+          let lyricText = note.lyric;
+          ctx.font = `italic ${lyricFontSize}px Arial, sans-serif`;
+          while (lyricText.length > 4 && ctx.measureText(lyricText).width > bw - 12) {
+            lyricText = lyricText.slice(0, -4) + '…';
+          }
+          ctx.fillText(lyricText, bx + bw / 2, clampedLyricY);
+        }
       }
 
       ctx.globalAlpha = 1.0;
@@ -562,8 +599,8 @@ class Game {
     // Strum zone
     this._drawStrumZone(ctx, strumY, W, hwLeft, hwRight);
 
-    // Beat pulse dots
-    this._drawBeatDots(ctx, W, H, strumY);
+    // Strum pattern visualizer (below strum zone)
+    this._drawStrumPattern(ctx, W, H, strumY, hwLeft, hwRight);
 
     // Floating feedback text
     this._drawFeedback(ctx);
@@ -610,24 +647,70 @@ class Game {
     if (this.strumFlash > 0) this.strumFlash--;
   }
 
-  _drawBeatDots(ctx, W, H, strumY) {
-    const dotCount = 4;
-    const dotSpacing = 18;
-    const totalW  = (dotCount - 1) * dotSpacing;
-    const startX  = W / 2 - totalW / 2;
-    const dotY    = strumY + 25;
+  _drawStrumPattern(ctx, W, H, strumY, hwLeft, hwRight) {
+    const song = this.currentSong;
+    if (!song || !song.strumPattern) return;
 
-    for (let i = 0; i < dotCount; i++) {
-      const active = (this.beatCount - 1) === i;
-      ctx.beginPath();
-      ctx.arc(startX + i * dotSpacing, dotY, active ? 7 : 5, 0, Math.PI * 2);
-      ctx.fillStyle = active ? '#e8a534' : '#3a2e20';
+    const pattern   = song.strumPattern;   // 8-element array
+    const msPerBeat = 60000 / song.bpm;
+    const msPerEighth  = msPerBeat / 2;
+    const msPerMeasure = msPerBeat * 4;
+
+    // Which 8th-note position are we on right now?
+    const currentPos = Math.floor((this.elapsed % msPerMeasure) / msPerEighth) % 8;
+
+    const cellPad  = 6;
+    const areaW    = hwRight - hwLeft - cellPad * 2;
+    const cellW    = areaW / 8;
+    const cellH    = Math.min(42, (H - strumY - 10) * 0.75);
+    const rowY     = strumY + (H - strumY - cellH) / 2;
+
+    for (let i = 0; i < 8; i++) {
+      const sym    = pattern[i]; // 'D', 'U', or ''
+      const cx     = hwLeft + cellPad + i * cellW;
+      const active = i === currentPos;
+
+      // Cell background
+      ctx.fillStyle = active ? 'rgba(232,165,52,0.18)' : 'rgba(26,21,16,0.8)';
+      this._roundRect(ctx, cx + 2, rowY, cellW - 4, cellH, 5);
+      ctx.fill();
+
+      // Cell border
+      ctx.strokeStyle = active ? '#e8a534' : '#2a2018';
+      ctx.lineWidth   = active ? 1.5 : 1;
       if (active) {
         ctx.shadowColor = '#f5c842';
-        ctx.shadowBlur  = 10;
+        ctx.shadowBlur  = 8;
       }
-      ctx.fill();
+      this._roundRect(ctx, cx + 2, rowY, cellW - 4, cellH, 5);
+      ctx.stroke();
       ctx.shadowBlur = 0;
+
+      // Arrow / symbol
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      const midX = cx + cellW / 2;
+      const midY = rowY + cellH / 2;
+
+      if (sym === 'D') {
+        ctx.fillStyle  = active ? '#f5c842' : '#7a5a1a';
+        ctx.font       = `bold ${Math.round(cellH * 0.52)}px Arial, sans-serif`;
+        ctx.fillText('↓', midX, midY);
+      } else if (sym === 'U') {
+        ctx.fillStyle  = active ? '#6ab4f5' : '#1a4a7a';
+        ctx.font       = `bold ${Math.round(cellH * 0.52)}px Arial, sans-serif`;
+        ctx.fillText('↑', midX, midY);
+      } else {
+        ctx.fillStyle  = active ? 'rgba(232,165,52,0.4)' : '#2a2018';
+        ctx.font       = `${Math.round(cellH * 0.3)}px Arial, sans-serif`;
+        ctx.fillText('·', midX, midY + 2);
+      }
+
+      // Beat number below (1, 2, 3, 4 on even indices; "+" on odd)
+      const beatLabel = i % 2 === 0 ? String(i / 2 + 1) : '+';
+      ctx.fillStyle   = active ? 'rgba(232,165,52,0.7)' : '#3a2e20';
+      ctx.font        = `${Math.round(cellH * 0.22)}px Arial, sans-serif`;
+      ctx.fillText(beatLabel, midX, rowY + cellH + 8);
     }
   }
 
@@ -689,6 +772,15 @@ class Game {
     if (this.dom['next-chord-name'])       this.dom['next-chord-name'].textContent       = nxtChord;
     if (this.dom['section-label'])         this.dom['section-label'].textContent         = section;
 
+    // Lyrics — show current note's lyric; keep last lyric while chord is playing
+    const lyric = currentNote ? (currentNote.lyric || '') : '';
+    if (this.dom['hud-lyric']) {
+      if (lyric !== this._lastLyric) {
+        this._lastLyric = lyric;
+        this.dom['hud-lyric'].textContent = lyric || '♪';
+      }
+    }
+
     // Update chord diagram if chord changed
     if (this._lastDisplayedChord !== curChord) {
       this._lastDisplayedChord = curChord;
@@ -697,7 +789,7 @@ class Game {
       }
     }
 
-    // Beat dots
+    // Beat dots — highlight current beat (1-4)
     if (this.dom['beat-dots']) {
       const dots = this.dom['beat-dots'].querySelectorAll('.beat-dot');
       dots.forEach((dot, i) => {

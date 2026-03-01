@@ -325,6 +325,85 @@ body {
   font-style: italic;
 }
 
+/* Strum Pattern section (learn screen) */
+.learn-strum-section {
+  background: var(--bg-card);
+  border: 1px solid #2a2018;
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius-sm);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.learn-strum-title {
+  font-size: 0.82rem;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.learn-strum-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 12px;
+}
+
+.learn-strum-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.strum-cell {
+  background: #1a1510;
+  border: 1px solid #3a2e20;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+  font-size: 1.3rem;
+  font-weight: bold;
+}
+
+.strum-cell.down { color: #e8a534; border-color: #7a5a1a; }
+.strum-cell.up   { color: #3498db; border-color: #1a4a7a; }
+.strum-cell.rest { color: #3a2e20; font-size: 0.8rem; }
+
+.learn-strum-beats {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.learn-strum-beats span {
+  text-align: center;
+  font-size: 0.62rem;
+  color: var(--text-dim);
+}
+
+.learn-strum-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.strum-legend-item {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.strum-arrow.down { color: #e8a534; font-size: 1rem; }
+.strum-arrow.up   { color: #3498db; font-size: 1rem; }
+.strum-arrow.rest { color: #5a4a3a; font-size: 0.9rem; }
+
 /* Tips section */
 .learn-tips {
   background: var(--bg-card);
@@ -552,6 +631,20 @@ body {
   font-size: 0.88rem;
   font-weight: bold;
   color: var(--text);
+}
+
+/* Lyrics in HUD */
+.lyric-block {
+  min-height: 48px;
+}
+
+.hud-lyric {
+  font-size: 0.78rem;
+  color: var(--text);
+  font-style: italic;
+  line-height: 1.4;
+  min-height: 2.2em;
+  transition: opacity 0.2s;
 }
 
 /* Beat dots */
