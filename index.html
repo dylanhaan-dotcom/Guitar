@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Country Guitar Hero 🎸</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ============================================================
+     MENU SCREEN
+     ============================================================ -->
+<section id="screen-menu" class="screen active">
+
+  <div class="menu-header">
+    <h1>🎸 Country Guitar Hero</h1>
+    <p>Learn to play 90s Country Hits — Guitar Hero style</p>
+  </div>
+
+  <div class="difficulty-bar">
+    <label>Difficulty:</label>
+    <button class="diff-btn active" id="diff-beginner">Beginner</button>
+    <button class="diff-btn" id="diff-intermediate">Intermediate</button>
+    <button class="diff-btn" id="diff-expert">Expert</button>
+  </div>
+
+  <div class="song-grid" id="song-grid">
+    <!-- Populated by JS -->
+  </div>
+
+</section>
+
+<!-- ============================================================
+     LEARN SCREEN
+     ============================================================ -->
+<section id="screen-learn" class="screen">
+
+  <div class="learn-header">
+    <button class="btn-back" id="btn-back-menu">← Song List</button>
+    <div class="learn-header-text">
+      <h2 id="learn-song-title">Song Name</h2>
+      <div class="meta" id="learn-song-meta"></div>
+    </div>
+  </div>
+
+  <div class="learn-body">
+
+    <div class="learn-intro">
+      <h3>Learn These Chords First</h3>
+      <p>Study the finger positions below, then hit Start Game when you're ready!</p>
+    </div>
+
+    <div class="learn-chords-grid" id="learn-chords-grid">
+      <!-- Chord diagrams populated by JS -->
+    </div>
+
+    <div class="learn-tips" id="learn-tips">
+      <!-- Tips populated by JS -->
+    </div>
+
+    <div class="learn-actions">
+      <button class="btn-primary" id="btn-start-game">▶ Start Game</button>
+    </div>
+
+  </div>
+
+</section>
+
+<!-- ============================================================
+     GAME SCREEN
+     ============================================================ -->
+<section id="screen-game" class="screen">
+
+  <!-- Highway (Canvas) -->
+  <div class="highway-container">
+    <canvas id="highway-canvas"></canvas>
+
+    <!-- Countdown overlay -->
+    <div class="countdown-overlay" id="countdown-overlay">
+      <div id="countdown-display">3</div>
+    </div>
+
+    <!-- Pause overlay -->
+    <div class="pause-overlay" id="pause-overlay">
+      <div class="pause-title">PAUSED</div>
+      <button id="btn-resume">▶ Resume</button>
+    </div>
+  </div>
+
+  <!-- HUD Panel (right side) -->
+  <div class="game-hud">
+
+    <!-- Song info -->
+    <div class="hud-block hud-song-info">
+      <div class="hud-song-name" id="hud-song-name">Song Title</div>
+      <div class="hud-section-label" id="section-label">—</div>
+    </div>
+
+    <!-- Score -->
+    <div class="hud-block">
+      <div class="hud-label">Score</div>
+      <div class="hud-value large" id="hud-score">0</div>
+    </div>
+
+    <!-- Streak -->
+    <div class="hud-block">
+      <div class="hud-label">Streak · Multiplier</div>
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div class="hud-value" id="hud-streak">0x</div>
+        <div style="font-size:0.85rem;color:var(--text-muted)" id="hud-multiplier">×1</div>
+      </div>
+    </div>
+
+    <!-- Current Chord -->
+    <div class="current-chord-block">
+      <div class="current-chord-label">Play Now</div>
+      <div id="current-chord-name">—</div>
+      <div id="current-chord-diagram"></div>
+    </div>
+
+    <!-- Next Chord -->
+    <div class="next-chord-row">
+      <span>Up next:</span>
+      <span id="next-chord-name">—</span>
+    </div>
+
+    <!-- Beat indicator dots -->
+    <div class="beat-dots-row" id="beat-dots">
+      <div class="beat-dot" data-beat="0"></div>
+      <div class="beat-dot" data-beat="1"></div>
+      <div class="beat-dot" data-beat="2"></div>
+      <div class="beat-dot" data-beat="3"></div>
+    </div>
+
+    <!-- Controls hint -->
+    <div class="controls-hint">
+      <div class="hint-row"><kbd>SPACE</kbd> Strum</div>
+      <div class="hint-row"><kbd>P</kbd> Pause</div>
+      <div class="hint-row" style="font-size:0.68rem;color:var(--text-dim);margin-top:2px">or tap the screen</div>
+    </div>
+
+  </div>
+
+</section>
+
+<!-- ============================================================
+     RESULTS SCREEN
+     ============================================================ -->
+<section id="screen-results" class="screen">
+
+  <div class="results-content">
+    <div class="results-title">Song Complete! 🎸</div>
+    <div id="results-song-name"></div>
+
+    <div class="results-stats">
+      <div class="result-stat">
+        <div class="result-stat-value large" id="results-score">0</div>
+        <div class="result-stat-label">Final Score</div>
+      </div>
+      <div class="result-stat">
+        <div class="result-stat-value grade" id="results-grade">—</div>
+        <div class="result-stat-label">Grade</div>
+      </div>
+      <div class="result-stat">
+        <div class="result-stat-value" id="results-accuracy">—</div>
+        <div class="result-stat-label">Accuracy</div>
+      </div>
+      <div class="result-stat">
+        <div class="result-stat-value" id="results-streak">—</div>
+        <div class="result-stat-label">Best Streak</div>
+      </div>
+    </div>
+
+    <div class="results-actions">
+      <button class="btn-secondary" id="btn-try-again">▶ Try Again</button>
+      <button class="btn-primary" id="btn-back-songs">← Song Select</button>
+    </div>
+  </div>
+
+</section>
+
+<!-- Scripts -->
+<script src="js/chords.js"></script>
+<script src="js/songs.js"></script>
+<script src="js/game.js"></script>
+
+</body>
+</html>
