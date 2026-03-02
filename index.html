@@ -29,6 +29,10 @@
     <!-- Populated by JS -->
   </div>
 
+  <div class="menu-footer">
+    <button class="btn-tuner-open" id="btn-open-tuner">🎛 Guitar Tuner</button>
+  </div>
+
 </section>
 
 <!-- ============================================================
@@ -216,9 +220,77 @@
 
 </section>
 
+<!-- ============================================================
+     TUNER SCREEN
+     ============================================================ -->
+<section id="screen-tuner" class="screen">
+
+  <div class="tuner-header">
+    <button class="btn-back" id="btn-back-tuner">← Back</button>
+    <h2>Guitar Tuner</h2>
+  </div>
+
+  <div class="tuner-body">
+
+    <!-- String buttons -->
+    <div class="tuner-strings-row">
+      <button class="tuner-string-btn" data-string="0">6<br><span>E</span></button>
+      <button class="tuner-string-btn" data-string="1">5<br><span>A</span></button>
+      <button class="tuner-string-btn" data-string="2">4<br><span>D</span></button>
+      <button class="tuner-string-btn" data-string="3">3<br><span>G</span></button>
+      <button class="tuner-string-btn" data-string="4">2<br><span>B</span></button>
+      <button class="tuner-string-btn" data-string="5">1<br><span>e</span></button>
+    </div>
+
+    <!-- Gauge canvas -->
+    <div class="tuner-gauge-wrap">
+      <canvas id="tuner-canvas"></canvas>
+    </div>
+
+    <!-- Note display -->
+    <div class="tuner-note-display">
+      <div id="tuner-note" class="tuner-note-name">—</div>
+      <div id="tuner-cents" class="tuner-cents"></div>
+    </div>
+
+    <!-- Status / pitch info -->
+    <div id="tuner-status" class="tuner-status">Press Start Tuner</div>
+    <div id="tuner-freq" class="tuner-freq"></div>
+
+    <!-- Reference pitches -->
+    <div class="tuner-ref-grid">
+      <div class="tuner-ref-title">Standard Tuning Reference</div>
+      <div class="tuner-ref-row">
+        <span>6 E2</span><span>82.4 Hz</span>
+        <span>5 A2</span><span>110.0 Hz</span>
+        <span>4 D3</span><span>146.8 Hz</span>
+      </div>
+      <div class="tuner-ref-row">
+        <span>3 G3</span><span>196.0 Hz</span>
+        <span>2 B3</span><span>246.9 Hz</span>
+        <span>1 e4</span><span>329.6 Hz</span>
+      </div>
+    </div>
+
+    <!-- Tips -->
+    <div class="tuner-tips">
+      <div class="tuner-tip">Hold your guitar close to the mic and pluck one string at a time.</div>
+      <div class="tuner-tip">Tune in a quiet room. The green zone means you're in tune (±5 cents).</div>
+    </div>
+
+    <!-- Start button -->
+    <div class="tuner-actions">
+      <button class="btn-primary" id="btn-tuner-start">🎤 Start Tuner</button>
+    </div>
+
+  </div>
+
+</section>
+
 <!-- Scripts -->
 <script src="js/chords.js"></script>
 <script src="js/songs.js"></script>
+<script src="js/tuner.js"></script>
 <script src="js/game.js"></script>
 
 </body>

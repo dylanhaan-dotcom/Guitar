@@ -381,7 +381,7 @@ class Game {
 
   _cacheDom() {
     const ids = [
-      'screen-menu', 'screen-learn', 'screen-game', 'screen-results',
+      'screen-menu', 'screen-learn', 'screen-game', 'screen-results', 'screen-tuner',
       'song-grid', 'learn-song-title', 'learn-song-meta', 'learn-chords-grid',
       'learn-tips', 'btn-start-game', 'btn-back-menu',
       'highway-canvas', 'hud-score', 'hud-streak', 'hud-multiplier',
@@ -391,7 +391,8 @@ class Game {
       'btn-try-again', 'btn-back-songs', 'countdown-display',
       'section-label', 'diff-beginner', 'diff-intermediate', 'diff-expert',
       'pause-overlay', 'btn-resume',
-      'btn-mic', 'mic-status', 'mic-level-bar', 'mic-chord-feedback'
+      'btn-mic', 'mic-status', 'mic-level-bar', 'mic-chord-feedback',
+      'btn-open-tuner', 'btn-back-tuner'
     ];
     ids.forEach(id => {
       const el = document.getElementById(id);
@@ -1156,9 +1157,24 @@ class Game {
       this.dom['btn-mic'].addEventListener('click', () => this._toggleMic());
     }
 
-    // Back to menu
+    // Back to menu (from learn screen)
     if (this.dom['btn-back-menu']) {
       this.dom['btn-back-menu'].addEventListener('click', () => this._showScreen(State.MENU));
+    }
+
+    // Tuner screen navigation
+    if (this.dom['btn-open-tuner']) {
+      this.dom['btn-open-tuner'].addEventListener('click', () => {
+        this._showScreen('tuner');
+        // Lazy-init tuner on first open
+        if (!tunerInstance) initTuner();
+      });
+    }
+    if (this.dom['btn-back-tuner']) {
+      this.dom['btn-back-tuner'].addEventListener('click', () => {
+        if (tunerInstance) tunerInstance.stop();
+        this._showScreen(State.MENU);
+      });
     }
 
     // Start game (screen transition handled inside _startGame)
