@@ -221,10 +221,13 @@ class MicInput {
       // created during a user-gesture callback starts in 'running' state immediately.
       this._ctx     = new (window.AudioContext || window.webkitAudioContext)();
       const source  = this._ctx.createMediaStreamSource(this.stream);
+      const boost   = this._ctx.createGain();
+      boost.gain.value = 4;
       this.analyser = this._ctx.createAnalyser();
       this.analyser.fftSize               = 4096;
       this.analyser.smoothingTimeConstant = 0;
-      source.connect(this.analyser);
+      source.connect(boost);
+      boost.connect(this.analyser);
       this.timeData   = new Float32Array(this.analyser.fftSize);
       this.freqData   = new Float32Array(this.analyser.frequencyBinCount);
       this.sampleRate = this._ctx.sampleRate;
@@ -1165,7 +1168,7 @@ class Game {
     const debugEl = document.getElementById('mic-rms-debug');
     if (debugEl && this.micRMS !== undefined) {
       debugEl.textContent =
-        `v7 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
+        `v8 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
     }
 
     if (feedbackEl && this.micFeedback) {
