@@ -194,14 +194,15 @@ class MicInput {
     this.freqData    = null;
     this.sampleRate  = 44100;
 
-    this._noiseFloor   = 0.01;
-    this._calibSamples = [];
-    this._calibStart   = 0;
-    this._CALIB_MS     = 2000;
-    this._lastStrumMs  = -Infinity;
-    this._MIN_STRUM_GAP = 180;
-    this._strumActive  = false;
-    this._rmsHistory   = [];
+    this._noiseFloor    = 0.01;
+    this._calibSamples  = [];
+    this._calibStart    = 0;
+    this._CALIB_MS      = 1500;   // shorter calibration (was 2000)
+    this._lastStrumMs   = -Infinity;
+    this._MIN_STRUM_GAP = 160;    // slightly tighter (was 180)
+    this._strumActive   = false;
+    this._rmsHistory    = [];
+    this._historyLen    = 4;      // shorter window = faster decay (was 8)
   }
 
   async start(audioCtx) {
@@ -247,8 +248,11 @@ class MicInput {
       this._calibSamples.push(rms);
       const progress = (nowMs - this._calibStart) / this._CALIB_MS;
       if (progress >= 1) {
-        const avg = this._calibSamples.reduce((a, b) => a + b, 0) / this._calibSamples.length;
-        this._noiseFloor = Math.max(0.004, avg * 2);
+        const sorted  = [...this._calibSamples].sort((a, b) => a - b);
+        // Use the 90th-percentile sample as noise floor so occasional
+        // room sounds during calibration don't inflate the threshold.
+        const p90idx  = Math.floor(sorted.length * 0.9);
+        this._noiseFloor = Math.max(0.003, sorted[p90idx] * 1.5);
         this.calibrating = false;
         this.ready = true;
       }
@@ -282,12 +286,17 @@ class MicInput {
 
   _detectStrum(rms, nowMs) {
     this._rmsHistory.push(rms);
-    if (this._rmsHistory.length > 8) this._rmsHistory.shift();
+    if (this._rmsHistory.length > this._historyLen) this._rmsHistory.shift();
 
-    const prev = this._rmsHistory.slice(0, -1);
+    const prev    = this._rmsHistory.slice(0, -1);
     const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : 0;
-    const threshold = Math.max(this._noiseFloor * 3, 0.015);
-    const isSpike   = rms > threshold && rms > prevAvg * 1.6;
+
+    // Lower absolute floor and multiplier so moderate guitar strums register.
+    // noiseFloor is calibrated from the quiet room — 2× is enough headroom.
+    const threshold = Math.max(this._noiseFloor * 2, 0.008);  // was *3 / 0.015
+    // Spike needs to be 30% above recent average (was 60%).
+    // With a 4-frame window the recent avg decays quickly after a strum ends.
+    const isSpike   = rms > threshold && rms > prevAvg * 1.3;
 
     if (isSpike && !this._strumActive && nowMs - this._lastStrumMs > this._MIN_STRUM_GAP) {
       this._strumActive = true;
@@ -521,7 +530,7 @@ class Game {
 
   // ---- Start Game ----
 
-  _startGame() {
+  async _startGame() {
     if (!this.currentSong) return;
     this.audio.resume();
     this.timeline = this._buildTimeline(this.currentSong);
@@ -530,6 +539,18 @@ class Game {
     this.strumFlash = 0;
     this.beatCount = 0;
     this.lastBeatTime = -Infinity;
+
+    // Auto-enable mic if the browser already granted permission (no prompt shown).
+    // If mic is already running from a previous round, leave it as-is.
+    if (!this.mic.enabled) {
+      try {
+        const perm = await navigator.permissions.query({ name: 'microphone' });
+        if (perm.state === 'granted') {
+          await this.mic.start(this.audio.ctx);
+          this._updateMicUI();
+        }
+      } catch (_) { /* permissions API unavailable — user must click Mic manually */ }
+    }
 
     this._showScreen(State.GAME);  // must be visible before canvas can measure dimensions
     this._setupCanvas();
