@@ -32,8 +32,8 @@ const HIT_QUALITY = {
   MISS:    { label: 'MISS',     color: '#e74c3c', points: 0,   minMs: -1,  maxMs: -1  },
 };
 
-const STRUM_ZONE_Y_RATIO = 0.82; // strum zone at 82% down the highway
-const HIGHWAY_PADDING_X   = 50;   // px from edge of canvas
+const STRUM_ZONE_X_RATIO = 0.25;  // strum zone at 25% from left (chord panel width)
+const HIGHWAY_PADDING_Y  = 5;     // px from top of canvas (below progress bar)
 
 // ---------- Audio Engine ----------
 
@@ -222,7 +222,7 @@ class MicInput {
       this._ctx     = new (window.AudioContext || window.webkitAudioContext)();
       const source  = this._ctx.createMediaStreamSource(this.stream);
       const boost   = this._ctx.createGain();
-      boost.gain.value = 2;
+      boost.gain.value = 3;
       this.analyser = this._ctx.createAnalyser();
       this.analyser.fftSize               = 4096;
       this.analyser.smoothingTimeConstant = 0;
@@ -705,81 +705,71 @@ class Game {
     const diff = DIFFICULTY[this.difficulty];
     const msPerBeat   = 60000 / currentSong.bpm;
     const lookAheadMs = diff.beatsLookAhead * msPerBeat;
-    const strumY      = H * STRUM_ZONE_Y_RATIO;
-    const hPad        = HIGHWAY_PADDING_X;
-    const hwLeft      = hPad;
-    const hwRight     = W - hPad;
-    const hwWidth     = hwRight - hwLeft;
+    const strumX      = W * STRUM_ZONE_X_RATIO;
+    const hwTop       = HIGHWAY_PADDING_Y;
+    const hwBottom    = H - 70;           // reserve bottom for strum pattern
+    const hwHeight    = hwBottom - hwTop;
+    const hwRange     = W - strumX;       // horizontal space notes scroll through
 
-    // Background
+    // Full background
     ctx.fillStyle = '#0a0806';
     ctx.fillRect(0, 0, W, H);
 
-    // Highway background
-    const hwGrad = ctx.createLinearGradient(hwLeft, 0, hwRight, 0);
+    // Highway background (strumX → right edge)
+    const hwGrad = ctx.createLinearGradient(strumX, 0, W, 0);
     hwGrad.addColorStop(0,   '#0d0b09');
     hwGrad.addColorStop(0.5, '#161210');
     hwGrad.addColorStop(1,   '#0d0b09');
     ctx.fillStyle = hwGrad;
-    ctx.fillRect(hwLeft, 0, hwWidth, H);
+    ctx.fillRect(strumX, hwTop, hwRange, hwHeight);
 
-    // Highway edge lines
+    // Highway edge lines (top and bottom)
     ctx.strokeStyle = '#3a2e20';
     ctx.lineWidth   = 2;
     ctx.beginPath();
-    ctx.moveTo(hwLeft, 0);
-    ctx.lineTo(hwLeft, H);
-    ctx.moveTo(hwRight, 0);
-    ctx.lineTo(hwRight, H);
+    ctx.moveTo(strumX, hwTop);
+    ctx.lineTo(W, hwTop);
+    ctx.moveTo(strumX, hwBottom);
+    ctx.lineTo(W, hwBottom);
     ctx.stroke();
 
-    // Subtle fret-like grid lines scrolling
-    const gridSpacing = (msPerBeat / lookAheadMs) * H;
-    const gridOffset  = ((elapsed % msPerBeat) / lookAheadMs) * H;
+    // Vertical grid lines scrolling right → left
+    const gridSpacing = (msPerBeat / lookAheadMs) * hwRange;
+    const gridOffset  = ((elapsed % msPerBeat) / lookAheadMs) * hwRange;
     ctx.strokeStyle = '#1e1810';
     ctx.lineWidth   = 1;
-    for (let y = strumY - gridOffset; y >= -gridSpacing; y -= gridSpacing) {
+    for (let x = strumX + gridSpacing - gridOffset; x < W + gridSpacing; x += gridSpacing) {
       ctx.beginPath();
-      ctx.moveTo(hwLeft + 1, y);
-      ctx.lineTo(hwRight - 1, y);
-      ctx.stroke();
-    }
-    for (let y = strumY - gridOffset + gridSpacing; y < H; y += gridSpacing) {
-      ctx.beginPath();
-      ctx.moveTo(hwLeft + 1, y);
-      ctx.lineTo(hwRight - 1, y);
+      ctx.moveTo(x, hwTop + 1);
+      ctx.lineTo(x, hwBottom - 1);
       ctx.stroke();
     }
 
-    // Draw chord blocks
+    // Draw chord blocks (approach from right, strum at left)
     this.timeline.forEach(note => {
       const timeUntilStrum = note.startMs - elapsed;
-      // y of the TOP edge of the block when it reaches strum zone
-      const blockTopY = strumY - (timeUntilStrum / lookAheadMs) * strumY;
-      const blockH    = (note.durationMs / lookAheadMs) * strumY;
-      const blockBotY = blockTopY + blockH;
+      const blockRightX    = strumX + (timeUntilStrum / lookAheadMs) * hwRange;
+      const blockW         = Math.max(4, (note.durationMs / lookAheadMs) * hwRange);
+      const blockLeftX     = blockRightX - blockW;
 
-      // Clip to highway (don't draw far off-screen)
-      if (blockTopY > H + 20 || blockBotY < -20) return;
+      // Clip
+      if (blockLeftX > W + 20 || blockRightX < -20) return;
 
       const color = getChordColor(note.chord);
       const alpha = note.beaten ? 0.25 : (note.missed ? 0.1 : 1.0);
-
       ctx.globalAlpha = alpha;
 
-      // Block body
       const inset = 8;
-      const bx = hwLeft + inset;
-      const bw = hwWidth - inset * 2;
+      const by = hwTop + inset;
+      const bh = hwHeight - inset * 2;
 
-      // Gradient fill
-      const bGrad = ctx.createLinearGradient(bx, blockTopY, bx + bw, blockTopY);
-      bGrad.addColorStop(0, this._hexAlpha(color, 0.7));
+      // Gradient fill (top→bottom for depth)
+      const bGrad = ctx.createLinearGradient(blockLeftX, by, blockLeftX, by + bh);
+      bGrad.addColorStop(0,   this._hexAlpha(color, 0.7));
       bGrad.addColorStop(0.5, this._hexAlpha(color, 0.95));
-      bGrad.addColorStop(1, this._hexAlpha(color, 0.7));
+      bGrad.addColorStop(1,   this._hexAlpha(color, 0.7));
       ctx.fillStyle = bGrad;
-
-      this._roundRect(ctx, bx, blockTopY, bw, Math.max(blockH, 4), 6);
+      this._roundRect(ctx, blockLeftX, by, blockW, bh, 6);
       ctx.fill();
 
       // Glow border
@@ -787,21 +777,19 @@ class Game {
       ctx.shadowBlur  = 12;
       ctx.strokeStyle = color;
       ctx.lineWidth   = 1.5;
-      this._roundRect(ctx, bx, blockTopY, bw, Math.max(blockH, 4), 6);
+      this._roundRect(ctx, blockLeftX, by, blockW, bh, 6);
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Chord name + lyric text inside block
-      if (blockH > 20 && blockTopY < H - 5 && blockBotY > 5) {
+      // Chord name + lyric — centered on visible portion of block
+      const visLeft  = Math.max(blockLeftX, strumX);
+      const visRight = Math.min(blockRightX, W);
+      const visW     = visRight - visLeft;
+      if (visW > 20) {
+        const textX    = visLeft + visW / 2;
         const hasLyric = note.lyric && note.lyric.trim().length > 0;
-        const chordFontSize = Math.min(26, Math.max(14, blockH * 0.35));
-        const lyricFontSize = Math.min(13, Math.max(9, blockH * 0.14));
-
-        // Chord name — positioned in upper center of block
-        const chordY = hasLyric
-          ? Math.max(blockTopY + chordFontSize, blockTopY + blockH * 0.35)
-          : Math.max(blockTopY + blockH / 2, blockTopY + chordFontSize);
-        const clampedChordY = Math.min(chordY, Math.min(blockBotY - chordFontSize, H - 5));
+        const chordFontSize = Math.min(22, Math.max(12, bh * 0.22));
+        const lyricFontSize = Math.min(11, Math.max(8,  bh * 0.10));
 
         ctx.fillStyle    = '#fff';
         ctx.shadowColor  = 'rgba(0,0,0,0.8)';
@@ -809,53 +797,43 @@ class Game {
         ctx.font         = `bold ${chordFontSize}px Arial, sans-serif`;
         ctx.textAlign    = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(note.chord, bx + bw / 2, clampedChordY);
-        ctx.shadowBlur   = 0;
+        ctx.fillText(note.chord, textX, hasLyric ? by + bh * 0.38 : by + bh / 2);
+        ctx.shadowBlur = 0;
 
-        // Lyric text — positioned below chord name
-        if (hasLyric && blockH > 44) {
-          const lyricY = clampedChordY + chordFontSize * 0.8;
-          const clampedLyricY = Math.min(lyricY, Math.min(blockBotY - 6, H - 5));
-          ctx.fillStyle    = 'rgba(255,255,255,0.75)';
-          ctx.font         = `italic ${lyricFontSize}px Arial, sans-serif`;
-          ctx.textAlign    = 'center';
-          ctx.textBaseline = 'middle';
-          // Truncate lyric if too wide for block
+        if (hasLyric && bh > 60) {
           let lyricText = note.lyric;
           ctx.font = `italic ${lyricFontSize}px Arial, sans-serif`;
-          while (lyricText.length > 4 && ctx.measureText(lyricText).width > bw - 12) {
+          while (lyricText.length > 4 && ctx.measureText(lyricText).width > visW - 12) {
             lyricText = lyricText.slice(0, -4) + '…';
           }
-          ctx.fillText(lyricText, bx + bw / 2, clampedLyricY);
+          ctx.fillStyle    = 'rgba(255,255,255,0.75)';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(lyricText, textX, by + bh * 0.62);
         }
       }
 
       ctx.globalAlpha = 1.0;
     });
 
-    // Strum zone
-    this._drawStrumZone(ctx, strumY, W, hwLeft, hwRight);
+    // Strum zone (vertical line) + chord diagram in left panel
+    this._drawStrumZone(ctx, strumX, W, H, hwTop, hwBottom);
 
-    // Strum pattern visualizer (below strum zone)
-    this._drawStrumPattern(ctx, W, H, strumY, hwLeft, hwRight);
+    // Strum pattern row below highway
+    this._drawStrumPattern(ctx, W, H, strumX, hwBottom);
 
-    // Floating feedback text
+    // Floating hit-quality feedback
     this._drawFeedback(ctx);
 
-    // Progress bar at top
+    // Progress bar along top of highway
     const progress = Math.min(1, elapsed / this.totalMs);
     ctx.fillStyle = '#2a2218';
-    ctx.fillRect(hwLeft, 0, hwWidth, 5);
+    ctx.fillRect(strumX, 0, hwRange, 5);
     ctx.fillStyle = '#e8a534';
-    ctx.fillRect(hwLeft, 0, hwWidth * progress, 5);
+    ctx.fillRect(strumX, 0, hwRange * progress, 5);
   }
 
-  _drawStrumZone(ctx, strumY, W, hwLeft, hwRight) {
-    // Background band
-    ctx.fillStyle = 'rgba(232,165,52,0.07)';
-    ctx.fillRect(hwLeft, strumY - 20, hwRight - hwLeft, 40);
-
-    // Flash color based on strum timing
+  _drawStrumZone(ctx, strumX, W, H, hwTop, hwBottom) {
+    // Vertical strum line with flash effect
     const flashIntensity = Math.max(0, this.strumFlash / 20);
     if (flashIntensity > 0) {
       ctx.strokeStyle = `rgba(245,200,66,${flashIntensity})`;
@@ -869,22 +847,153 @@ class Game {
       ctx.shadowBlur  = 8;
     }
     ctx.beginPath();
-    ctx.moveTo(hwLeft, strumY);
-    ctx.lineTo(hwRight, strumY);
+    ctx.moveTo(strumX, hwTop);
+    ctx.lineTo(strumX, hwBottom);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // STRUM label
-    ctx.fillStyle   = 'rgba(232,165,52,0.5)';
-    ctx.font        = '11px Arial, sans-serif';
-    ctx.textAlign   = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('STRUM', hwLeft - 6, strumY);
+    // Chord diagram fills left panel
+    const chord = this._getIndicatorChord();
+    if (chord) this._drawChordDiagram(ctx, chord, 2, 2, strumX - 4, H - 4);
 
     if (this.strumFlash > 0) this.strumFlash--;
   }
 
-  _drawStrumPattern(ctx, W, H, strumY, hwLeft, hwRight) {
+  _getIndicatorChord() {
+    const elapsed = this.elapsed;
+    // Prefer a note currently within 800ms of the strum line
+    for (const note of this.timeline) {
+      if (!note.missed && note.startMs <= elapsed + 800 && elapsed < note.endMs) {
+        return note.chord;
+      }
+    }
+    // Fall back to next unbeaten/unmissed note
+    for (const note of this.timeline) {
+      if (!note.beaten && !note.missed) return note.chord;
+    }
+    return null;
+  }
+
+  _drawChordDiagram(ctx, chordName, px, py, pw, ph) {
+    const def = typeof CHORD_DEFS !== 'undefined' ? CHORD_DEFS[chordName] : null;
+    if (!def) {
+      ctx.fillStyle    = '#e8a534';
+      ctx.font         = `bold ${Math.min(32, pw * 0.5)}px Arial`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(chordName, px + pw / 2, py + ph / 2);
+      return;
+    }
+
+    const { frets, fingers, startFret } = def;
+    const color      = def.color || '#e8a534';
+    const numStrings = 6;
+    const numFrets   = 4;
+
+    // Geometry
+    const padX    = pw * 0.14;
+    const topArea = ph * 0.14;   // chord name
+    const botArea = ph * 0.08;   // full name
+    const gridX   = px + padX;
+    const gridY   = py + topArea;
+    const gridW   = pw - padX * 2;
+    const gridH   = ph - topArea - botArea - ph * 0.08;
+    const sSpc    = gridW / (numStrings - 1);
+    const fSpc    = gridH / numFrets;
+
+    // Chord name
+    ctx.fillStyle    = color;
+    ctx.font         = `bold ${Math.min(28, pw * 0.32)}px Arial`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(chordName, px + pw / 2, py + ph * 0.02);
+
+    // Nut or start-fret label
+    if (startFret === 1) {
+      ctx.fillStyle = '#ccc';
+      ctx.fillRect(gridX, gridY, gridW, Math.max(3, fSpc * 0.1));
+    } else {
+      ctx.fillStyle    = 'rgba(200,200,200,0.55)';
+      ctx.font         = `${Math.min(11, pw * 0.13)}px Arial`;
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${startFret}fr`, px + 2, gridY + fSpc * 0.5);
+    }
+
+    // Fret lines
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth   = 1;
+    for (let f = 0; f <= numFrets; f++) {
+      ctx.beginPath();
+      ctx.moveTo(gridX,          gridY + f * fSpc);
+      ctx.lineTo(gridX + gridW,  gridY + f * fSpc);
+      ctx.stroke();
+    }
+
+    // String lines
+    for (let s = 0; s < numStrings; s++) {
+      ctx.strokeStyle = frets[s] === -1 ? '#3a3a3a' : '#777';
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.moveTo(gridX + s * sSpc, gridY);
+      ctx.lineTo(gridX + s * sSpc, gridY + gridH);
+      ctx.stroke();
+    }
+
+    // Mute / open / finger markers
+    const markerY = gridY - fSpc * 0.52;
+    for (let s = 0; s < numStrings; s++) {
+      const sx = gridX + s * sSpc;
+      const fr = frets[s];
+
+      if (fr === -1) {
+        // × muted
+        ctx.strokeStyle = '#e74c3c';
+        ctx.lineWidth   = 1.5;
+        const r = sSpc * 0.22;
+        ctx.beginPath();
+        ctx.moveTo(sx - r, markerY - r); ctx.lineTo(sx + r, markerY + r);
+        ctx.moveTo(sx + r, markerY - r); ctx.lineTo(sx - r, markerY + r);
+        ctx.stroke();
+      } else if (fr === 0) {
+        // ○ open
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth   = 1.5;
+        ctx.beginPath();
+        ctx.arc(sx, markerY, sSpc * 0.22, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        // Finger dot
+        const dotY = gridY + (fr - startFret + 0.5) * fSpc;
+        ctx.fillStyle   = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur  = 6;
+        ctx.beginPath();
+        ctx.arc(sx, dotY, sSpc * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        if (fingers[s] > 0) {
+          ctx.fillStyle    = '#000';
+          ctx.font         = `bold ${Math.max(8, Math.min(11, sSpc * 0.5))}px Arial`;
+          ctx.textAlign    = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(fingers[s], sx, dotY);
+        }
+      }
+    }
+
+    // Full name at bottom
+    if (def.fullName) {
+      ctx.fillStyle    = 'rgba(255,255,255,0.4)';
+      ctx.font         = `${Math.min(10, pw * 0.12)}px Arial`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(def.fullName, px + pw / 2, py + ph - 2);
+    }
+  }
+
+  _drawStrumPattern(ctx, W, H, hwLeft, hwBottom) {
     const song = this.currentSong;
     if (!song || !song.strumPattern) return;
 
@@ -897,10 +1006,10 @@ class Game {
     const currentPos = Math.floor((this.elapsed % msPerMeasure) / msPerEighth) % 8;
 
     const cellPad  = 6;
-    const areaW    = hwRight - hwLeft - cellPad * 2;
+    const areaW    = W - hwLeft - cellPad * 2;
     const cellW    = areaW / 8;
-    const cellH    = Math.min(42, (H - strumY - 10) * 0.75);
-    const rowY     = strumY + (H - strumY - cellH) / 2;
+    const cellH    = Math.min(42, (H - hwBottom - 10) * 0.75);
+    const rowY     = hwBottom + (H - hwBottom - cellH) / 2;
 
     for (let i = 0; i < 8; i++) {
       const sym    = pattern[i]; // 'D', 'U', or ''
@@ -1058,8 +1167,11 @@ class Game {
     }
 
     const canvas  = this.canvas;
-    const strumX  = canvas ? canvas.width / 2 : 200;
-    const strumY  = canvas ? canvas.height * STRUM_ZONE_Y_RATIO : 300;
+    const W       = canvas ? canvas.width  : 400;
+    const H       = canvas ? canvas.height : 300;
+    const strumX  = W * STRUM_ZONE_X_RATIO;
+    const fbX     = strumX + (W - strumX) * 0.3;
+    const fbY     = H * 0.42;
 
     if (bestNote) {
       const quality = bestDelta < 70 ? 'PERFECT' : bestDelta < 160 ? 'GREAT' : 'GOOD';
@@ -1071,8 +1183,8 @@ class Game {
       this.feedback.push({
         text:  HIT_QUALITY[quality].label,
         color: HIT_QUALITY[quality].color,
-        x:     strumX,
-        y:     strumY - 40,
+        x:     fbX,
+        y:     fbY,
         alpha: 1.0,
       });
     } else {
@@ -1168,7 +1280,7 @@ class Game {
     const debugEl = document.getElementById('mic-rms-debug');
     if (debugEl && this.micRMS !== undefined) {
       debugEl.textContent =
-        `v9 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
+        `v10 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
     }
 
     if (feedbackEl && this.micFeedback) {
