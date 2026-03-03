@@ -717,6 +717,8 @@ kbd {
 .mic-btn:hover          { border-color: var(--gold); color: var(--gold); }
 .mic-btn.active         { background: rgba(46,204,113,0.15); border-color: #2ecc71; color: #2ecc71; }
 .mic-btn[data-status="calibrating"] { border-color: #f39c12; color: #f39c12; }
+/* Bright pulse when a strum is detected — visible regardless of note timing */
+.mic-btn.strum-flash    { background: rgba(46,204,113,0.5); box-shadow: 0 0 14px rgba(46,204,113,0.7); }
 
 .mic-status-text {
   font-size: 0.68rem;
@@ -727,8 +729,20 @@ kbd {
   height: 5px;
   background: #1e1810;
   border-radius: 3px;
-  overflow: hidden;
+  overflow: visible;   /* allow threshold tick to show outside bar */
   margin-bottom: 6px;
+  position: relative;
+}
+/* Threshold tick — shows where the strum detection threshold is */
+.mic-level-track::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: var(--threshold-pct, 30%);
+  width: 2px;
+  height: 11px;
+  background: rgba(255,200,50,0.7);
+  border-radius: 1px;
 }
 
 .mic-level-bar {

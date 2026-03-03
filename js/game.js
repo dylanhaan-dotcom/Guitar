@@ -209,7 +209,11 @@ class MicInput {
     if (this.enabled) return { ok: true };
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false }
+        audio: {
+          echoCancellation:  false,
+          noiseSuppression:  false,
+          autoGainControl:   false,   // CRITICAL: AGC flattens strum spikes
+        }
       });
       const source  = audioCtx.createMediaStreamSource(this.stream);
       this.analyser = audioCtx.createAnalyser();
@@ -241,7 +245,9 @@ class MicInput {
     if (!this.enabled || !this.analyser) return { strum: false, level: 0 };
 
     const rms   = this._getRMS();
-    const level = Math.min(1, rms / 0.15);
+    // Normalize to 0–1 using a lower divisor so quiet guitar still shows on the bar.
+    // 0.05 RMS (gentle strum) → 100% bar; was 0.15 (required loud strumming).
+    const level = Math.min(1, rms / 0.05);
 
     // Calibration phase — measure background noise for 2 s
     if (this.calibrating) {
@@ -269,7 +275,9 @@ class MicInput {
       confidence = res.confidence;
     }
 
-    return { strum, chord, confidence, level, calibrating: false };
+    const threshold = Math.max(this._noiseFloor * 1.5, 0.005);
+    return { strum, chord, confidence, level, calibrating: false,
+             rms, threshold };
   }
 
   get calibProgress() {
@@ -291,12 +299,11 @@ class MicInput {
     const prev    = this._rmsHistory.slice(0, -1);
     const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : 0;
 
-    // Lower absolute floor and multiplier so moderate guitar strums register.
-    // noiseFloor is calibrated from the quiet room — 2× is enough headroom.
-    const threshold = Math.max(this._noiseFloor * 2, 0.008);  // was *3 / 0.015
-    // Spike needs to be 30% above recent average (was 60%).
-    // With a 4-frame window the recent avg decays quickly after a strum ends.
-    const isSpike   = rms > threshold && rms > prevAvg * 1.3;
+    // noiseFloor is the calibrated room noise. 1.5× gives just enough headroom.
+    const threshold = Math.max(this._noiseFloor * 1.5, 0.005);
+    // Spike only needs to be 20% above recent average.
+    // With a 4-frame (~64ms) window the recent avg decays quickly after sustain.
+    const isSpike   = rms > threshold && rms > prevAvg * 1.2;
 
     if (isSpike && !this._strumActive && nowMs - this._lastStrumMs > this._MIN_STRUM_GAP) {
       this._strumActive = true;
@@ -367,8 +374,10 @@ class Game {
     this.audio   = new AudioEngine();
     this.scorer  = new ScoreManager();
     this.mic     = new MicInput();
-    this.micFeedback = null;  // { match, detected, expected, time }
-    this.micLevel    = 0;
+    this.micFeedback   = null;  // { match, detected, expected, time }
+    this.micLevel      = 0;
+    this.micStrumFlash = 0;    // frames to show strum-detected pulse in HUD
+    this.micRMS        = 0;    // last raw RMS for debug bar
 
     // Canvas
     this.canvas  = null;
@@ -628,8 +637,14 @@ class Game {
       const nowMs = performance.now();
       const micResult = this.mic.poll(nowMs);
       this.micLevel = micResult.level || 0;
+      if (micResult.rms !== undefined) this.micRMS = micResult.rms;
+      if (micResult.threshold !== undefined) this.micThreshold = micResult.threshold;
 
-      if (micResult.strum) this._handleStrum();
+      if (micResult.strum) {
+        this._handleStrum();
+        this.micStrumFlash = 10;  // ~160ms visual pulse in HUD
+      }
+      if (this.micStrumFlash > 0) this.micStrumFlash--;
 
       if (micResult.chord && micResult.confidence > 0.55) {
         let expectedChord = null;
@@ -1123,6 +1138,8 @@ class Game {
     if (btn) {
       btn.dataset.status = status;
       btn.classList.toggle('active', status !== 'off');
+      // Flash green on detected strum regardless of note timing
+      btn.classList.toggle('strum-flash', this.micStrumFlash > 0);
     }
 
     if (statusEl) {
@@ -1131,13 +1148,20 @@ class Game {
         requesting:   'Requesting…',
         starting:     'Starting…',
         calibrating:  `Calibrating… ${Math.round(this.mic.calibProgress * 100)}%`,
-        ready:        'Listening',
+        ready:        this.micStrumFlash > 0 ? '🎸 STRUM!' : 'Listening',
       };
       statusEl.textContent = labels[status] || status;
     }
 
     if (levelBar) {
       levelBar.style.width = (this.micLevel * 100).toFixed(1) + '%';
+      // Draw a threshold marker on the level track
+      const thresholdPct = this.micThreshold > 0
+        ? Math.min(100, (this.micThreshold / 0.05) * 100).toFixed(1)
+        : null;
+      if (thresholdPct !== null) {
+        levelBar.parentElement.style.setProperty('--threshold-pct', thresholdPct + '%');
+      }
     }
 
     if (feedbackEl && this.micFeedback) {
