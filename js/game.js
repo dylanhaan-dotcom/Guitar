@@ -260,11 +260,10 @@ class MicInput {
       this._calibSamples.push(rms);
       const progress = (nowMs - this._calibStart) / this._CALIB_MS;
       if (progress >= 1) {
-        const sorted  = [...this._calibSamples].sort((a, b) => a - b);
-        // Use the 90th-percentile sample as noise floor so occasional
-        // room sounds during calibration don't inflate the threshold.
-        const p90idx  = Math.floor(sorted.length * 0.9);
-        this._noiseFloor = Math.max(0.003, sorted[p90idx] * 1.5);
+        // Use the simple mean — not a high percentile — so the noise floor
+        // stays low and close to actual background level.
+        const mean = this._calibSamples.reduce((a, b) => a + b, 0) / this._calibSamples.length;
+        this._noiseFloor = mean;
         this.calibrating = false;
         this.ready = true;
       }
@@ -281,7 +280,7 @@ class MicInput {
       confidence = res.confidence;
     }
 
-    const threshold = Math.max(this._noiseFloor * 1.5, 0.005);
+    const threshold = Math.max(this._noiseFloor + 0.005, 0.007);
     return { strum, chord, confidence, level, calibrating: false,
              rms, threshold };
   }
@@ -305,18 +304,21 @@ class MicInput {
     const prev    = this._rmsHistory.slice(0, -1);
     const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : 0;
 
-    // noiseFloor is the calibrated room noise. 1.5× gives just enough headroom.
-    const threshold = Math.max(this._noiseFloor * 1.5, 0.005);
-    // Spike only needs to be 20% above recent average.
-    // With a 4-frame (~64ms) window the recent avg decays quickly after sustain.
-    const isSpike   = rms > threshold && rms > prevAvg * 1.2;
+    // Threshold: just above calibrated room noise. Small fixed margin so quiet
+    // rooms (noiseFloor ~0.002) still get a reasonable floor (0.007).
+    const threshold = Math.max(this._noiseFloor + 0.005, 0.007);
 
-    if (isSpike && !this._strumActive && nowMs - this._lastStrumMs > this._MIN_STRUM_GAP) {
-      this._strumActive = true;
+    // Onset: above threshold AND louder than recent average.
+    // prevAvg uses only 3 prior frames (~50 ms) so guitar sustain decays fast
+    // enough for consecutive strums to register as fresh spikes.
+    const isOnset = rms > threshold && rms > prevAvg * 1.2;
+
+    // Removed _strumActive flag — it caused the sustain to permanently block
+    // detection. The MIN_STRUM_GAP is the sole debounce now.
+    if (isOnset && nowMs - this._lastStrumMs > this._MIN_STRUM_GAP) {
       this._lastStrumMs = nowMs;
       return true;
     }
-    if (rms < threshold * 0.5) this._strumActive = false;
     return false;
   }
 
