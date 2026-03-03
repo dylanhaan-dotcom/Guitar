@@ -861,17 +861,15 @@ class Game {
 
   _getIndicatorChord() {
     const elapsed = this.elapsed;
-    // Prefer a note currently within 800ms of the strum line
+    // Show whichever unbeaten/unmissed note is nearest the strum line
+    let best = null;
+    let bestDist = Infinity;
     for (const note of this.timeline) {
-      if (!note.missed && note.startMs <= elapsed + 800 && elapsed < note.endMs) {
-        return note.chord;
-      }
+      if (note.beaten || note.missed) continue;
+      const dist = Math.abs(note.startMs - elapsed);
+      if (dist < bestDist) { bestDist = dist; best = note; }
     }
-    // Fall back to next unbeaten/unmissed note
-    for (const note of this.timeline) {
-      if (!note.beaten && !note.missed) return note.chord;
-    }
-    return null;
+    return best ? best.chord : null;
   }
 
   _drawChordDiagram(ctx, chordName, px, py, pw, ph) {
@@ -1197,7 +1195,7 @@ class Game {
           text:  'MISS',
           color: '#e74c3c',
           x:     strumX,
-          y:     strumY - 40,
+          y:     fbY,
           alpha: 1.0,
         });
       } else {
@@ -1280,7 +1278,7 @@ class Game {
     const debugEl = document.getElementById('mic-rms-debug');
     if (debugEl && this.micRMS !== undefined) {
       debugEl.textContent =
-        `v10 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
+        `v11 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
     }
 
     if (feedbackEl && this.micFeedback) {
