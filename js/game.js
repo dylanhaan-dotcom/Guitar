@@ -251,9 +251,9 @@ class MicInput {
     if (!this.enabled || !this.analyser) return { strum: false, level: 0 };
 
     const rms   = this._getRMS();
-    // Normalize to 0–1 using a lower divisor so quiet guitar still shows on the bar.
-    // 0.05 RMS (gentle strum) → 100% bar; was 0.15 (required loud strumming).
-    const level = Math.min(1, rms / 0.05);
+    // Normalize to 0–1. 0.015 RMS fills the bar — suits laptop mics that
+    // capture a quiet acoustic guitar at arm's length (~0.005–0.015 RMS).
+    const level = Math.min(1, rms / 0.015);
 
     // Calibration phase — measure background noise for 2 s
     if (this.calibrating) {
@@ -604,7 +604,6 @@ class Game {
 
     const tick = () => {
       if (display) display.textContent = count;
-      this.audio.playMetronome(true);
       count--;
       if (count > 0) {
         setTimeout(tick, 1000);
@@ -697,7 +696,6 @@ class Game {
     if (beatTime > this.lastBeatTime + msPerBeat * 0.5) {
       this.lastBeatTime = beatTime;
       this.beatCount    = (this.beatCount % 4) + 1;
-      this.audio.playMetronome(this.beatCount === 1);
     }
   }
 
@@ -1165,7 +1163,7 @@ class Game {
       levelBar.style.width = (this.micLevel * 100).toFixed(1) + '%';
       // Draw a threshold marker on the level track
       const thresholdPct = this.micThreshold > 0
-        ? Math.min(100, (this.micThreshold / 0.05) * 100).toFixed(1)
+        ? Math.min(100, (this.micThreshold / 0.015) * 100).toFixed(1)
         : null;
       if (thresholdPct !== null) {
         levelBar.parentElement.style.setProperty('--threshold-pct', thresholdPct + '%');
