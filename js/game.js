@@ -280,7 +280,7 @@ class MicInput {
       confidence = res.confidence;
     }
 
-    const threshold = Math.max(this._noiseFloor + 0.005, 0.007);
+    const threshold = Math.max(this._noiseFloor * 1.1, 0.003);
     return { strum, chord, confidence, level, calibrating: false,
              rms, threshold };
   }
@@ -298,24 +298,10 @@ class MicInput {
   }
 
   _detectStrum(rms, nowMs) {
-    this._rmsHistory.push(rms);
-    if (this._rmsHistory.length > this._historyLen) this._rmsHistory.shift();
-
-    const prev    = this._rmsHistory.slice(0, -1);
-    const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : 0;
-
-    // Threshold: just above calibrated room noise. Small fixed margin so quiet
-    // rooms (noiseFloor ~0.002) still get a reasonable floor (0.007).
-    const threshold = Math.max(this._noiseFloor + 0.005, 0.007);
-
-    // Onset: above threshold AND louder than recent average.
-    // prevAvg uses only 3 prior frames (~50 ms) so guitar sustain decays fast
-    // enough for consecutive strums to register as fresh spikes.
-    const isOnset = rms > threshold && rms > prevAvg * 1.2;
-
-    // Removed _strumActive flag — it caused the sustain to permanently block
-    // detection. The MIN_STRUM_GAP is the sole debounce now.
-    if (isOnset && nowMs - this._lastStrumMs > this._MIN_STRUM_GAP) {
+    // Overcompensated / permissive: no spike-ratio check, just exceed the
+    // noise floor by a tiny margin. Sole debounce is the time gap.
+    const threshold = Math.max(this._noiseFloor * 1.1, 0.003);
+    if (rms > threshold && nowMs - this._lastStrumMs > this._MIN_STRUM_GAP) {
       this._lastStrumMs = nowMs;
       return true;
     }
@@ -1168,6 +1154,12 @@ class Game {
       if (thresholdPct !== null) {
         levelBar.parentElement.style.setProperty('--threshold-pct', thresholdPct + '%');
       }
+    }
+
+    const debugEl = document.getElementById('mic-rms-debug');
+    if (debugEl && this.micRMS !== undefined) {
+      debugEl.textContent =
+        `rms: ${this.micRMS.toFixed(4)}  threshold: ${(this.micThreshold || 0).toFixed(4)}`;
     }
 
     if (feedbackEl && this.micFeedback) {
