@@ -221,16 +221,10 @@ class MicInput {
       // created during a user-gesture callback starts in 'running' state immediately.
       this._ctx     = new (window.AudioContext || window.webkitAudioContext)();
       const source  = this._ctx.createMediaStreamSource(this.stream);
-      // Boost the mic signal — browsers with autoGainControl:false deliver a
-      // very weak raw signal (~0.001 RMS). 10× makes strums register cleanly
-      // while calibration still adapts the noise floor automatically.
-      const boost   = this._ctx.createGain();
-      boost.gain.value = 10;
       this.analyser = this._ctx.createAnalyser();
       this.analyser.fftSize               = 4096;
-      this.analyser.smoothingTimeConstant = 0.3;
-      source.connect(boost);
-      boost.connect(this.analyser);
+      this.analyser.smoothingTimeConstant = 0;
+      source.connect(this.analyser);
       this.timeData   = new Float32Array(this.analyser.fftSize);
       this.freqData   = new Float32Array(this.analyser.frequencyBinCount);
       this.sampleRate = this._ctx.sampleRate;
@@ -298,16 +292,15 @@ class MicInput {
 
   _getRMS() {
     this.analyser.getFloatTimeDomainData(this.timeData);
-    // Use peak amplitude rather than true RMS: the analyser buffer is 4096
-    // samples (~92ms) while a strum transient is only a few ms, so averaging
-    // squares across the full buffer crushes the value to near-zero.
-    // Peak detects the loudest sample in the window, which matches a strum.
-    let peak = 0;
-    for (let i = 0; i < this.timeData.length; i++) {
-      const a = Math.abs(this.timeData[i]);
-      if (a > peak) peak = a;
-    }
-    return peak;
+    // Short-window RMS over the most recent 512 samples (~11ms at 44100 Hz).
+    // Full-buffer RMS (~92ms) dilutes transient strums to near-zero.
+    // Peak amplitude catches every mic hiss spike → false triggers.
+    // 11ms window: strum attacks register clearly; steady hiss stays low.
+    const win   = 512;
+    const start = this.timeData.length - win;
+    let sum = 0;
+    for (let i = start; i < this.timeData.length; i++) sum += this.timeData[i] ** 2;
+    return Math.sqrt(sum / win);
   }
 
   _detectStrum(rms, nowMs) {
@@ -1172,7 +1165,7 @@ class Game {
     const debugEl = document.getElementById('mic-rms-debug');
     if (debugEl && this.micRMS !== undefined) {
       debugEl.textContent =
-        `v6 peak: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
+        `v7 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
     }
 
     if (feedbackEl && this.micFeedback) {
