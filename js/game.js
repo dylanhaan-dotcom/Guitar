@@ -221,10 +221,16 @@ class MicInput {
       // created during a user-gesture callback starts in 'running' state immediately.
       this._ctx     = new (window.AudioContext || window.webkitAudioContext)();
       const source  = this._ctx.createMediaStreamSource(this.stream);
+      // Boost the mic signal — browsers with autoGainControl:false deliver a
+      // very weak raw signal (~0.001 RMS). 10× makes strums register cleanly
+      // while calibration still adapts the noise floor automatically.
+      const boost   = this._ctx.createGain();
+      boost.gain.value = 10;
       this.analyser = this._ctx.createAnalyser();
       this.analyser.fftSize               = 4096;
       this.analyser.smoothingTimeConstant = 0.3;
-      source.connect(this.analyser);
+      source.connect(boost);
+      boost.connect(this.analyser);
       this.timeData   = new Float32Array(this.analyser.fftSize);
       this.freqData   = new Float32Array(this.analyser.frequencyBinCount);
       this.sampleRate = this._ctx.sampleRate;
