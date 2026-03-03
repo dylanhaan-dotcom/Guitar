@@ -222,7 +222,7 @@ class MicInput {
       this._ctx     = new (window.AudioContext || window.webkitAudioContext)();
       const source  = this._ctx.createMediaStreamSource(this.stream);
       const boost   = this._ctx.createGain();
-      boost.gain.value = 4;
+      boost.gain.value = 2;
       this.analyser = this._ctx.createAnalyser();
       this.analyser.fftSize               = 4096;
       this.analyser.smoothingTimeConstant = 0;
@@ -1168,7 +1168,7 @@ class Game {
     const debugEl = document.getElementById('mic-rms-debug');
     if (debugEl && this.micRMS !== undefined) {
       debugEl.textContent =
-        `v8 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
+        `v9 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
     }
 
     if (feedbackEl && this.micFeedback) {
