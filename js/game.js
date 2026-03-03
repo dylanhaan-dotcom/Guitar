@@ -205,24 +205,29 @@ class MicInput {
     this._historyLen    = 4;      // shorter window = faster decay (was 8)
   }
 
-  async start(audioCtx) {
+  async start() {
     if (this.enabled) return { ok: true };
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation:  false,
           noiseSuppression:  false,
-          autoGainControl:   false,   // CRITICAL: AGC flattens strum spikes
+          autoGainControl:   false,
         }
       });
-      const source  = audioCtx.createMediaStreamSource(this.stream);
-      this.analyser = audioCtx.createAnalyser();
+      // Use a dedicated AudioContext, not the game's AudioEngine context.
+      // The game context can be suspended (browsers require user gesture to resume it),
+      // which causes getFloatTimeDomainData to return all zeros. A fresh context
+      // created during a user-gesture callback starts in 'running' state immediately.
+      this._ctx     = new (window.AudioContext || window.webkitAudioContext)();
+      const source  = this._ctx.createMediaStreamSource(this.stream);
+      this.analyser = this._ctx.createAnalyser();
       this.analyser.fftSize               = 4096;
       this.analyser.smoothingTimeConstant = 0.3;
       source.connect(this.analyser);
-      this.timeData  = new Float32Array(this.analyser.fftSize);
-      this.freqData  = new Float32Array(this.analyser.frequencyBinCount);
-      this.sampleRate = audioCtx.sampleRate;
+      this.timeData   = new Float32Array(this.analyser.fftSize);
+      this.freqData   = new Float32Array(this.analyser.frequencyBinCount);
+      this.sampleRate = this._ctx.sampleRate;
       this.enabled    = true;
       this.calibrating = true;
       this._calibStart  = performance.now();
@@ -235,6 +240,7 @@ class MicInput {
 
   stop() {
     if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    if (this._ctx)   { this._ctx.close(); this._ctx = null; }
     this.enabled = false;
     this.ready   = false;
     this.calibrating = false;
@@ -555,7 +561,7 @@ class Game {
       try {
         const perm = await navigator.permissions.query({ name: 'microphone' });
         if (perm.state === 'granted') {
-          await this.mic.start(this.audio.ctx);
+          await this.mic.start();
           this._updateMicUI();
         }
       } catch (_) { /* permissions API unavailable — user must click Mic manually */ }
@@ -1113,7 +1119,7 @@ class Game {
 
     // Show "requesting" state immediately
     this._updateMicUI('requesting');
-    const result = await this.mic.start(this.audio.ctx);
+    const result = await this.mic.start();
     if (!result.ok) {
       alert('Microphone access denied.\n\nTo use this feature, allow microphone access in your browser settings and try again.');
     }
