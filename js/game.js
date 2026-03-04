@@ -199,7 +199,7 @@ class MicInput {
     this._calibStart    = 0;
     this._CALIB_MS      = 1500;   // shorter calibration (was 2000)
     this._lastStrumMs   = -Infinity;
-    this._MIN_STRUM_GAP = 160;    // slightly tighter (was 180)
+    this._MIN_STRUM_GAP = 450;    // guitar reverb lasts ~300-500ms; suppress re-triggers
     this._strumActive   = false;
     this._rmsHistory    = [];
     this._historyLen    = 4;      // shorter window = faster decay (was 8)
@@ -1092,7 +1092,7 @@ class Game {
     let nextNote    = null;
     for (let i = 0; i < this.timeline.length; i++) {
       const n = this.timeline[i];
-      if (n.startMs <= elapsed && elapsed < n.endMs) {
+      if (!n.beaten && !n.missed && n.startMs <= elapsed && elapsed < n.endMs) {
         currentNote = n;
         nextNote    = this.timeline[i + 1] || null;
         break;
@@ -1278,7 +1278,7 @@ class Game {
     const debugEl = document.getElementById('mic-rms-debug');
     if (debugEl && this.micRMS !== undefined) {
       debugEl.textContent =
-        `v11 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
+        `v12 rms: ${this.micRMS.toFixed(4)}  thr: ${(this.micThreshold || 0).toFixed(4)}`;
     }
 
     if (feedbackEl && this.micFeedback) {
